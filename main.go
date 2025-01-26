@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
@@ -30,11 +31,28 @@ func readFromTCP(conn net.Conn) ([]byte, error) {
 	reader := bufio.NewReader(conn)
 	return reader.ReadBytes('\n')
 }
+
 func main() {
-	// Initialize clients
+
 	gtsdbAddress := "localhost:5555"
 	influxURL := "http://localhost:8086"
 	influxToken := "0sOuyNL1DM4fxLpYlRxvxaKOyjCs3M1VuUICdx81YaNwQLzsrmAKYoJLqUiKGICV4x3SaQFOq12eclj4IB64Qg=="
+	nsqAddress := "localhost:4150"
+
+	args := os.Args
+	if len(args) > 1 && args[1] == "pubsub" {
+		fmt.Println("Running PubSub benchmarks")
+
+		count := 1000000
+
+		result := benchmarkGTSDBPubSub(gtsdbAddress, count)
+		fmt.Printf("GTSDB PubSub Performance: %v\n", result.Duration)
+
+		result2 := benchmarkNSQPubSub(nsqAddress, count)
+		fmt.Printf("NSQ PubSub Performance: %v\n", result2.Duration)
+		return
+	}
+
 	influxClient := influxdb2.NewClient(influxURL, influxToken)
 
 	defer influxClient.Close()

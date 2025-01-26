@@ -13,8 +13,8 @@ type GTSDBWrite struct {
 	Operation string `json:"operation"`
 	Key       string `json:"key"`
 	Write     struct {
-		Value float64 `json:"Value"`
-	} `json:"Write"`
+		Value float64 `json:"value"`
+	} `json:"write"`
 }
 
 type GTSDBRead struct {
@@ -26,7 +26,12 @@ type GTSDBRead struct {
 		EndTime      int64 `json:"end_timestamp,omitempty"`
 		Downsampling int   `json:"downsampling,omitempty"`
 		LastX        int   `json:"lastx,omitempty"`
-	} `json:"Read"`
+	} `json:"read"`
+}
+
+type GTSDBSubscribe struct {
+	Operation string `json:"operation"`
+	Key       string `json:"key"`
 }
 
 func benchmarkGTSDBRead(address string, sensorID string) BenchmarkResult {
@@ -89,7 +94,7 @@ func benchmarkGTSDBWrite(address string, sensorID string, numPoints int) Benchma
 
 			Key: sensorID,
 			Write: struct {
-				Value float64 `json:"Value"`
+				Value float64 `json:"value"`
 			}{
 				Value: float64(i),
 			},
@@ -142,7 +147,7 @@ func benchmarkGTSDBMultiWrite(address string, numPointsPerSensor int, numSensors
 
 					Key: sid,
 					Write: struct {
-						Value float64 `json:"Value"`
+						Value float64 `json:"value"`
 					}{
 						Value: rand.Float64() * 100,
 					},
@@ -170,4 +175,85 @@ func benchmarkGTSDBMultiWrite(address string, numPointsPerSensor int, numSensors
 	result.Duration = time.Since(start)
 	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
 	return result
+}
+
+func benchmarkGTSDBPubSub(gtsdbAddress string, count int) BenchmarkResult {
+	result := BenchmarkResult{}
+	done := make(chan bool)
+
+	conn, err := connectTCP(gtsdbAddress)
+	if err != nil {
+		return result
+	}
+	defer conn.Close()
+
+	subConn, err := connectTCP(gtsdbAddress)
+	if err != nil {
+		return result
+	}
+	defer subConn.Close()
+
+	// Set up subscription
+	subReq := GTSDBSubscribe{
+		Operation: "subscribe",
+		Key:       "benchmark_sensor",
+	}
+	if err := writeToTCP(subConn, mustMarshal(subReq)); err != nil {
+		return result
+	}
+
+	start := time.Now()
+	var received atomic.Int64
+	received.Store(0)
+
+	// Start subscriber
+	go func() {
+		for {
+			_, err := readFromTCP(subConn)
+			if err != nil {
+				return
+			}
+
+			newCount := received.Add(1)
+			if newCount == int64(count) {
+				result.Duration = time.Since(start)
+				done <- true
+				return
+			}
+		}
+	}()
+
+	// Wait for subscription to be established
+	time.Sleep(1 * time.Second)
+
+	// Start publisher
+	go func() {
+		margin := int(0.1 * float64(count))
+		for i := 0; i < count+margin; i++ {
+			pubReq := GTSDBWrite{
+				Operation: "write",
+				Key:       "benchmark_sensor",
+				Write: struct {
+					Value float64 `json:"value"`
+				}{
+					Value: float64(i),
+				},
+			}
+			if err := writeToTCP(conn, mustMarshal(pubReq)); err != nil {
+				return
+			}
+			readFromTCP(conn) // Read acknowledgment
+		}
+	}()
+
+	<-done // Wait for benchmark to complete
+	return result
+}
+
+func mustMarshal(v interface{}) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
