@@ -53,6 +53,11 @@ func main() {
 		return
 	}
 
+	if len(args) > 1 && args[1] == "readmany" {
+		runReadManyBenchmark(gtsdbAddress, influxURL, influxToken)
+		return
+	}
+
 	influxClient := influxdb2.NewClient(influxURL, influxToken)
 
 	defer influxClient.Close()
@@ -94,4 +99,44 @@ func main() {
 	// fmt.Printf("Write Performance: VictoriaMetrics: %v (Success Rate: %.2f%%)\n", vmWriteResult.Duration, vmWriteResult.SuccessRate)
 	// fmt.Printf("Read Performance: VictoriaMetrics: %v (Success Rate: %.2f%%)\n", vmReadResult.Duration, vmReadResult.SuccessRate)
 	// fmt.Printf("Multi-Write Performance: VictoriaMetrics: %v (Success Rate: %.2f%%)\n", vmMultiWriteResult.Duration, vmMultiWriteResult.SuccessRate)
+}
+
+// runReadManyBenchmark does 10,000 individual reads (10 sensors x 1,000 each)
+// GTSDB via TCP reuse, InfluxDB via HTTP keep-alive
+func runReadManyBenchmark(gtsdbAddress, influxURL, influxToken string) {
+	const numSensors = 10
+	const pointsPerSensor = 1000
+	const org = "bench"
+	const bucket = "bench"
+
+	fmt.Println("=== Read-Many Benchmark (10,000 individual reads) ===")
+	fmt.Println("GTSDB: TCP reuse, lastx=1 per read")
+	fmt.Println("InfluxDB: HTTP keep-alive, Flux last() per query")
+	fmt.Println()
+
+	// Pre-load data
+	fmt.Println("Pre-loading data...")
+	InitKeysGTSDB(gtsdbAddress, numSensors)
+	time.Sleep(100 * time.Millisecond)
+	PreloadGTSDB("localhost:5556", numSensors, pointsPerSensor)
+	PreloadInfluxDB(influxURL, influxToken, org, bucket, numSensors, pointsPerSensor)
+	fmt.Println("Pre-load done.")
+
+	// GTSDB ReadMany
+	fmt.Println("\nGTSDB ReadMany...")
+	gtsdbResult := benchmarkGTSDBReadMany(gtsdbAddress, numSensors, pointsPerSensor)
+
+	// InfluxDB ReadMany
+	fmt.Println("InfluxDB ReadMany...")
+	influxResult := benchmarkInfluxReadMany(influxURL, influxToken, org, bucket, numSensors, pointsPerSensor)
+
+	fmt.Println("\n=== RESULTS ===")
+	fmt.Printf("GTSDB:    %v (%d ops, %.2f%% success)\n", gtsdbResult.Duration, gtsdbResult.SuccessCount, gtsdbResult.SuccessRate)
+	fmt.Printf("InfluxDB: %v (%d ops, %.2f%% success)\n", influxResult.Duration, influxResult.SuccessCount, influxResult.SuccessRate)
+	fmt.Printf("\nGTSDB is %.1fx faster on 10,000 reads\n", float64(influxResult.Duration)/float64(gtsdbResult.Duration))
+
+	fmt.Println("\n=== PAGE DATA ===")
+	fmt.Printf("readManyData: GTSDB %.2f / InfluxDB %.2f\n",
+		float64(gtsdbResult.Duration.Microseconds())/1000.0,
+		float64(influxResult.Duration.Microseconds())/1000.0)
 }

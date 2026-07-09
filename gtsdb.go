@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math/rand/v2"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -256,4 +259,69 @@ func mustMarshal(v interface{}) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// ReadMany: 10,000 individual reads (10 sensors x 1,000 lastx=1 each) via TCP reuse
+func benchmarkGTSDBReadMany(address string, numSensors, pointsPerSensor int) BenchmarkResult {
+	start := time.Now()
+	result := BenchmarkResult{OperationCount: numSensors * pointsPerSensor}
+
+	conn, err := connectTCP(address)
+	if err != nil {
+		result.FailureCount = uint64(result.OperationCount)
+		return result
+	}
+	defer conn.Close()
+
+	for i := 0; i < numSensors; i++ {
+		for j := 0; j < pointsPerSensor; j++ {
+			cmd := fmt.Sprintf(`{"operation":"read","key":"bench_sensor_%d","read":{"lastx":1}}`, i)
+			err := writeToTCP(conn, []byte(cmd))
+			if err == nil {
+				_, readErr := readFromTCP(conn)
+				if readErr == nil {
+					result.SuccessCount++
+				} else {
+					result.FailureCount++
+				}
+			} else {
+				result.FailureCount++
+			}
+		}
+	}
+
+	result.Duration = time.Since(start)
+	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
+	return result
+}
+
+// InitKeysGTSDB pre-creates keys via TCP
+func InitKeysGTSDB(address string, numSensors int) {
+	conn, err := connectTCP(address)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	for i := 0; i < numSensors; i++ {
+		cmd := fmt.Sprintf(`{"operation":"initkey","key":"bench_sensor_%d"}`, i)
+		writeToTCP(conn, []byte(cmd))
+		readFromTCP(conn)
+	}
+}
+
+// PreloadGTSDB loads data via batch-write over HTTP
+func PreloadGTSDB(httpAddr string, numSensors, pointsPerSensor int) {
+	for i := 0; i < numSensors; i++ {
+		var parts []string
+		for j := 0; j < pointsPerSensor; j++ {
+			parts = append(parts, fmt.Sprintf(`{"key":"bench_sensor_%d","value":%f,"timestamp":%d}`, i, float64(j)*1.5, 1700000000+int64(j)))
+		}
+		body := fmt.Sprintf(`{"operation":"batch-write","points":[%s]}`, strings.Join(parts, ","))
+		resp, err := http.Post("http://"+httpAddr+"/", "application/json", strings.NewReader(body))
+		if err != nil {
+			panic(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}
 }
