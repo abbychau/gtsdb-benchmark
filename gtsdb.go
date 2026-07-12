@@ -1,327 +1,312 @@
 package main
 
 import (
-	"encoding/json"
+	"bufio"
+	"context"
 	"fmt"
-	"io"
-	"math/rand/v2"
-	"net/http"
+	"net"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	json "github.com/bytedance/sonic"
 )
 
-type GTSDBWrite struct {
-	Operation string `json:"operation"`
-	Key       string `json:"key"`
-	Write     struct {
-		Value float64 `json:"value"`
-	} `json:"write"`
+type gtsdbDriver struct {
+	tcpAddr string
+	conn    net.Conn
+	reader  *bufio.Reader
+	mu      sync.Mutex
 }
 
-type GTSDBRead struct {
-	Operation string `json:"operation"`
-
-	Key  string `json:"key"`
-	Read struct {
-		StartTime    int64 `json:"start_timestamp,omitempty"`
-		EndTime      int64 `json:"end_timestamp,omitempty"`
-		Downsampling int   `json:"downsampling,omitempty"`
-		LastX        int   `json:"lastx,omitempty"`
-	} `json:"read"`
+func newGTSDBDriver(tcpAddr string) *gtsdbDriver {
+	return &gtsdbDriver{
+		tcpAddr: tcpAddr,
+	}
 }
 
-type GTSDBSubscribe struct {
-	Operation string `json:"operation"`
-	Key       string `json:"key"`
-}
+func (d *gtsdbDriver) Name() string { return "GTSDB" }
 
-func benchmarkGTSDBRead(address string, sensorID string) BenchmarkResult {
-	start := time.Now()
-	result := BenchmarkResult{OperationCount: 1}
-
-	conn, err := connectTCP(address)
+func (d *gtsdbDriver) Connect(ctx context.Context) error {
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(ctx, "tcp", d.tcpAddr)
 	if err != nil {
-		result.FailureCount = 1
-		return result
+		return fmt.Errorf("gtsdb connect: %w", err)
 	}
-	defer conn.Close()
-
-	readReq := GTSDBRead{
-		Operation: "read",
-
-		Key: sensorID,
-		Read: struct {
-			StartTime    int64 `json:"start_timestamp,omitempty"`
-			EndTime      int64 `json:"end_timestamp,omitempty"`
-			Downsampling int   `json:"downsampling,omitempty"`
-			LastX        int   `json:"lastx,omitempty"`
-		}{
-			LastX: 100,
-		},
-	}
-
-	payload, _ := json.Marshal(readReq)
-	err = writeToTCP(conn, payload)
-
-	if err == nil {
-		_, readErr := readFromTCP(conn)
-		if readErr == nil {
-			result.SuccessCount++
-		} else {
-			result.FailureCount++
-		}
-	} else {
-		result.FailureCount++
-	}
-
-	result.Duration = time.Since(start)
-	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
-	return result
+	d.conn = conn
+	d.reader = bufio.NewReader(conn)
+	return nil
 }
-func benchmarkGTSDBWrite(address string, sensorID string, numPoints int) BenchmarkResult {
-	start := time.Now()
-	result := BenchmarkResult{OperationCount: numPoints}
 
-	conn, err := connectTCP(address)
-	if err != nil {
-		result.FailureCount = uint64(numPoints)
-		return result
+func (d *gtsdbDriver) Close() error {
+	if d.conn != nil {
+		return d.conn.Close()
 	}
-	defer conn.Close()
+	return nil
+}
 
-	for i := 0; i < numPoints; i++ {
-		writeReq := GTSDBWrite{
-			Operation: "write",
+func (d *gtsdbDriver) Write(ctx context.Context, key string, value float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.writeLocked(key, value)
+}
 
-			Key: sensorID,
-			Write: struct {
-				Value float64 `json:"value"`
-			}{
-				Value: float64(i),
-			},
-		}
+func (d *gtsdbDriver) writeLocked(key string, value float64) error {
+	payload := fmt.Sprintf(`{"operation":"write","key":"%s","write":{"value":%f}}`, key, value)
+	if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
+		return err
+	}
+	_, err := d.reader.ReadBytes('\n')
+	return err
+}
 
-		payload, _ := json.Marshal(writeReq)
-		err := writeToTCP(conn, payload)
+func (d *gtsdbDriver) writePipelined(ctx context.Context, key string, values []float64) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 
-		if err == nil {
-			_, readErr := readFromTCP(conn)
-			if readErr == nil {
-				result.SuccessCount++
-			} else {
-				result.FailureCount++
-			}
-		} else {
-			result.FailureCount++
+	for _, v := range values {
+		payload := fmt.Sprintf(`{"operation":"write","key":"%s","write":{"value":%f}}`, key, v)
+		if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
+			return 0, err
 		}
 	}
 
-	result.Duration = time.Since(start)
-	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
-	return result
+	success := 0
+	for i := 0; i < len(values); i++ {
+		if _, err := d.reader.ReadBytes('\n'); err != nil {
+			return success, err
+		}
+		success++
+	}
+	return success, nil
 }
 
-func benchmarkGTSDBMultiWrite(address string, numPointsPerSensor int, numSensors int) BenchmarkResult {
-	start := time.Now()
-	result := BenchmarkResult{
-		OperationCount: numPointsPerSensor * numSensors,
-	}
-
-	var wg sync.WaitGroup
-	wg.Add(numSensors)
-
-	for i := 0; i < numSensors; i++ {
-		sensorID := fmt.Sprintf("benchmark_sensor_%d", i)
-		go func(sid string) {
-			defer wg.Done()
-
-			conn, err := connectTCP(address)
-			if err != nil {
-				atomic.AddUint64(&result.FailureCount, uint64(numPointsPerSensor))
-				return
-			}
-			defer conn.Close()
-
-			for j := 0; j < numPointsPerSensor; j++ {
-				data := GTSDBWrite{
-					Operation: "write",
-
-					Key: sid,
-					Write: struct {
-						Value float64 `json:"value"`
-					}{
-						Value: rand.Float64() * 100,
-					},
-				}
-
-				jsonData, _ := json.Marshal(data)
-				err := writeToTCP(conn, jsonData)
-
-				if err == nil {
-					_, readErr := readFromTCP(conn)
-					if readErr == nil {
-						atomic.AddUint64(&result.SuccessCount, 1)
-					} else {
-						atomic.AddUint64(&result.FailureCount, 1)
-					}
-				} else {
-					atomic.AddUint64(&result.FailureCount, 1)
-				}
-			}
-		}(sensorID)
-	}
-
-	wg.Wait()
-
-	result.Duration = time.Since(start)
-	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
-	return result
+func (d *gtsdbDriver) WriteBatch(ctx context.Context, points []KeyedPoint) error {
+	return d.writeBatchTCP(ctx, points)
 }
 
-func benchmarkGTSDBPubSub(gtsdbAddress string, count int) BenchmarkResult {
-	result := BenchmarkResult{}
-	done := make(chan bool)
+// writeBatchTCP sends a batch-write via a fresh TCP connection (avoids shared-state issues).
+func (d *gtsdbDriver) writeBatchTCP(ctx context.Context, points []KeyedPoint) error {
+	return gtsdbBatchWriteFresh(d.tcpAddr, points)
+}
 
-	conn, err := connectTCP(gtsdbAddress)
+// gtsdbBatchWriteFresh opens a new TCP connection, sends batch-write(s), and closes it.
+// Sends all points in chunks of up to 10000 (GTSDB's batch limit).
+func gtsdbBatchWriteFresh(tcpAddr string, points []KeyedPoint) error {
+	const pointsPerChunk = 10000
+
+	conn, err := net.Dial("tcp", tcpAddr)
 	if err != nil {
-		return result
+		return err
 	}
 	defer conn.Close()
+	reader := bufio.NewReader(conn)
 
-	subConn, err := connectTCP(gtsdbAddress)
+	for i := 0; i < len(points); i += pointsPerChunk {
+		end := i + pointsPerChunk
+		if end > len(points) {
+			end = len(points)
+		}
+		chunk := points[i:end]
+
+		var sb strings.Builder
+		sb.WriteString(`{"operation":"batch-write","points":[`)
+		for j, p := range chunk {
+			if j > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteString(fmt.Sprintf(`{"key":"%s","value":%f,"timestamp":%d}`, p.Key, p.Value, p.Timestamp))
+		}
+		sb.WriteString(`]}`)
+		payload := sb.String()
+
+		_, err = conn.Write(append([]byte(payload), '\n'))
+		if err != nil {
+			return err
+		}
+
+		resp, err := reader.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
+
+		var result struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(resp, &result); err != nil {
+			return fmt.Errorf("batch-write: parse error: %w", err)
+		}
+		if !result.Success {
+			return fmt.Errorf("batch-write failed: %s", result.Message)
+		}
+	}
+	return nil
+}
+
+// gtsdbReadResponse matches the JSON structure returned by GTSDB's read operation.
+type gtsdbReadResponse struct {
+	Success bool             `json:"success"`
+	Data    []gtsdbDataPoint `json:"data"`
+}
+
+type gtsdbDataPoint struct {
+	Key       string  `json:"key"`
+	Timestamp int64   `json:"timestamp"`
+	Value     float64 `json:"value"`
+}
+
+func (d *gtsdbDriver) Read(ctx context.Context, key string, lastX int) (int, error) {
+	// Use shared connection with mutex for thread safety
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	payload := fmt.Sprintf(`{"operation":"read","key":"%s","read":{"lastx":%d}}`, key, lastX)
+	if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
+		return 0, err
+	}
+	resp, err := d.reader.ReadBytes('\n')
 	if err != nil {
-		return result
+		return 0, err
+	}
+
+	var result gtsdbReadResponse
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return 0, err
+	}
+	return len(result.Data), nil
+}
+
+// gtsdbReadFresh opens a new TCP connection, performs a read, and closes it.
+func gtsdbReadFresh(tcpAddr, key string, lastX int) (int, error) {
+	conn, err := net.Dial("tcp", tcpAddr)
+	if err != nil {
+		return 0, err
+	}
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+
+	payload := fmt.Sprintf(`{"operation":"read","key":"%s","read":{"lastx":%d}}`, key, lastX)
+	if _, err := conn.Write(append([]byte(payload), '\n')); err != nil {
+		return 0, err
+	}
+	resp, err := reader.ReadBytes('\n')
+	if err != nil {
+		return 0, err
+	}
+
+	var result gtsdbReadResponse
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return 0, err
+	}
+	return len(result.Data), nil
+}
+
+// MultiRead uses GTSDB's multi-read API to read from multiple keys in one TCP round-trip.
+func (d *gtsdbDriver) MultiRead(ctx context.Context, keys []string, lastX int) (map[string]int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	keysJSON, _ := json.Marshal(keys)
+	payload := fmt.Sprintf(`{"operation":"multi-read","keys":%s,"read":{"lastx":%d}}`, string(keysJSON), lastX)
+	if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
+		return nil, err
+	}
+	resp, err := d.reader.ReadBytes('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	var result struct {
+		Success   bool                        `json:"success"`
+		MultiData map[string][]gtsdbDataPoint `json:"multi_data"`
+	}
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return nil, err
+	}
+
+	counts := make(map[string]int, len(result.MultiData))
+	for k, points := range result.MultiData {
+		counts[k] = len(points)
+	}
+	return counts, nil
+}
+
+func (d *gtsdbDriver) PubSub(ctx context.Context, key string, count int) (time.Duration, error) {
+	pubConn, err := net.Dial("tcp", d.tcpAddr)
+	if err != nil {
+		return 0, err
+	}
+	defer pubConn.Close()
+	pubReader := bufio.NewReader(pubConn)
+
+	subConn, err := net.Dial("tcp", d.tcpAddr)
+	if err != nil {
+		return 0, err
 	}
 	defer subConn.Close()
+	subReader := bufio.NewReader(subConn)
 
-	// Set up subscription
-	subReq := GTSDBSubscribe{
-		Operation: "subscribe",
-		Key:       "benchmark_sensor",
+	subPayload := fmt.Sprintf(`{"operation":"subscribe","key":"%s"}`, key)
+	if _, err := subConn.Write(append([]byte(subPayload), '\n')); err != nil {
+		return 0, err
 	}
-	if err := writeToTCP(subConn, mustMarshal(subReq)); err != nil {
-		return result
+	if _, err := subReader.ReadBytes('\n'); err != nil {
+		return 0, err
 	}
 
-	start := time.Now()
-	var received atomic.Int64
-	received.Store(0)
+	time.Sleep(100 * time.Millisecond)
 
-	// Start subscriber
+	received := make(chan struct{})
 	go func() {
-		for {
-			_, err := readFromTCP(subConn)
-			if err != nil {
-				return
-			}
-
-			newCount := received.Add(1)
-			if newCount == int64(count) {
-				result.Duration = time.Since(start)
-				done <- true
-				return
-			}
+		for i := 0; i < count; i++ {
+			subReader.ReadBytes('\n')
 		}
+		close(received)
 	}()
 
-	// Wait for subscription to be established
-	time.Sleep(1 * time.Second)
+	margin := int(0.1 * float64(count))
+	total := count + margin
 
-	// Start publisher
-	go func() {
-		margin := int(0.1 * float64(count))
-		for i := 0; i < count+margin; i++ {
-			pubReq := GTSDBWrite{
-				Operation: "write",
-				Key:       "benchmark_sensor",
-				Write: struct {
-					Value float64 `json:"value"`
-				}{
-					Value: float64(i),
-				},
-			}
-			if err := writeToTCP(conn, mustMarshal(pubReq)); err != nil {
-				return
-			}
-			readFromTCP(conn) // Read acknowledgment
-		}
-	}()
-
-	<-done // Wait for benchmark to complete
-	return result
-}
-
-func mustMarshal(v interface{}) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return b
-}
-
-// ReadMany: 10,000 individual reads (10 sensors x 1,000 lastx=1 each) via TCP reuse
-func benchmarkGTSDBReadMany(address string, numSensors, pointsPerSensor int) BenchmarkResult {
 	start := time.Now()
-	result := BenchmarkResult{OperationCount: numSensors * pointsPerSensor}
-
-	conn, err := connectTCP(address)
-	if err != nil {
-		result.FailureCount = uint64(result.OperationCount)
-		return result
-	}
-	defer conn.Close()
-
-	for i := 0; i < numSensors; i++ {
-		for j := 0; j < pointsPerSensor; j++ {
-			cmd := fmt.Sprintf(`{"operation":"read","key":"bench_sensor_%d","read":{"lastx":1}}`, i)
-			err := writeToTCP(conn, []byte(cmd))
-			if err == nil {
-				_, readErr := readFromTCP(conn)
-				if readErr == nil {
-					result.SuccessCount++
-				} else {
-					result.FailureCount++
-				}
-			} else {
-				result.FailureCount++
-			}
-		}
+	for i := 0; i < total; i++ {
+		pubPayload := fmt.Sprintf(`{"operation":"write","key":"%s","write":{"value":%f}}`, key, float64(i))
+		pubConn.Write(append([]byte(pubPayload), '\n'))
+		pubReader.ReadBytes('\n')
 	}
 
-	result.Duration = time.Since(start)
-	result.SuccessRate = float64(result.SuccessCount) / float64(result.OperationCount) * 100
-	return result
+	select {
+	case <-received:
+		return time.Since(start), nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
 
-// InitKeysGTSDB pre-creates keys via TCP
-func InitKeysGTSDB(address string, numSensors int) {
-	conn, err := connectTCP(address)
-	if err != nil {
-		panic(err)
-	}
-	defer conn.Close()
+func (d *gtsdbDriver) initKeys(numSensors int) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	for i := 0; i < numSensors; i++ {
 		cmd := fmt.Sprintf(`{"operation":"initkey","key":"bench_sensor_%d"}`, i)
-		writeToTCP(conn, []byte(cmd))
-		readFromTCP(conn)
+		d.conn.Write(append([]byte(cmd), '\n'))
+		d.reader.ReadBytes('\n')
 	}
+	return nil
 }
 
-// PreloadGTSDB loads data via batch-write over HTTP
-func PreloadGTSDB(httpAddr string, numSensors, pointsPerSensor int) {
+func (d *gtsdbDriver) preloadTCP(numSensors, pointsPerSensor int) error {
 	for i := 0; i < numSensors; i++ {
-		var parts []string
+		var points []KeyedPoint
 		for j := 0; j < pointsPerSensor; j++ {
-			parts = append(parts, fmt.Sprintf(`{"key":"bench_sensor_%d","value":%f,"timestamp":%d}`, i, float64(j)*1.5, 1700000000+int64(j)))
+			points = append(points, KeyedPoint{
+				Key:       fmt.Sprintf("bench_sensor_%d", i),
+				Value:     float64(j) * 1.5,
+				Timestamp: 1700000000 + int64(j),
+			})
 		}
-		body := fmt.Sprintf(`{"operation":"batch-write","points":[%s]}`, strings.Join(parts, ","))
-		resp, err := http.Post("http://"+httpAddr+"/", "application/json", strings.NewReader(body))
-		if err != nil {
-			panic(err)
+		if err := gtsdbBatchWriteFresh(d.tcpAddr, points); err != nil {
+			return err
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
 	}
+	return nil
 }

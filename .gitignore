@@ -1,0 +1,6 @@
+*.exe
+*.test
+*.out
+*.prof
+*.pkg
+*.dat

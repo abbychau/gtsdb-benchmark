@@ -1,70 +1,81 @@
 package main
 
 import (
-	"encoding/json"
+	"context"
 	"sync/atomic"
 	"time"
+
+	json "github.com/bytedance/sonic"
 
 	"github.com/nsqio/go-nsq"
 )
 
-type NSQMessage struct {
-	Key   string  `json:"key"`
-	Value float64 `json:"value"`
+type nsqDriver struct {
+	addr string
 }
 
-func benchmarkNSQPubSub(nsqAddress string, count int) BenchmarkResult {
-	result := BenchmarkResult{}
-	done := make(chan bool)
+func newNSQDriver(addr string) *nsqDriver {
+	return &nsqDriver{addr: addr}
+}
 
-	producer, err := nsq.NewProducer(nsqAddress, nsq.NewConfig())
+func (d *nsqDriver) Name() string { return "NSQ" }
+
+func (d *nsqDriver) Connect(ctx context.Context) error {
+	return nil
+}
+
+func (d *nsqDriver) Close() error { return nil }
+
+func (d *nsqDriver) PubSub(ctx context.Context, key string, count int) (time.Duration, error) {
+	producer, err := nsq.NewProducer(d.addr, nsq.NewConfig())
 	if err != nil {
-		return result
+		return 0, err
 	}
+	defer producer.Stop()
 
 	consumer, err := nsq.NewConsumer("test", "benchmark", nsq.NewConfig())
 	if err != nil {
-		return result
+		return 0, err
 	}
 
 	producer.SetLogger(nil, 0)
 	consumer.SetLogger(nil, 0)
 
-	start := time.Now()
 	var received atomic.Int64
-	received.Store(0)
+	done := make(chan time.Time, 1)
 
 	consumer.AddHandler(nsq.HandlerFunc(func(message *nsq.Message) error {
-		newCount := received.Add(1)
-		if newCount == int64(count) {
-			result.Duration = time.Since(start)
-			producer.Stop()
-			consumer.Stop()
-			done <- true
+		n := received.Add(1)
+		if n == int64(count) {
+			done <- time.Now()
 		}
 		return nil
 	}))
 
-	if err = consumer.ConnectToNSQD(nsqAddress); err != nil {
-		return result
+	if err = consumer.ConnectToNSQD(d.addr); err != nil {
+		return 0, err
 	}
+	defer consumer.Stop()
 
-	// Wait for subscription to be established
-	time.Sleep(1 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 
-	// Start publisher
+	start := time.Now()
+
 	go func() {
 		for i := 0; i < count; i++ {
-			msg := NSQMessage{
-				Key:   "benchmark_sensor",
-				Value: float64(i),
-			}
-			if data, err := json.Marshal(msg); err == nil {
-				producer.Publish("test", data)
-			}
+			msg := struct {
+				Key   string  `json:"key"`
+				Value float64 `json:"value"`
+			}{Key: key, Value: float64(i)}
+			data, _ := json.Marshal(msg)
+			producer.Publish("test", data)
 		}
 	}()
 
-	<-done // Wait for benchmark to complete
-	return result
+	select {
+	case end := <-done:
+		return end.Sub(start), nil
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
