@@ -27,7 +27,7 @@ param(
     [switch]$StopOnly,
     [int]$Count = 3000,
     [int]$Sensors = 5,
-    [int]$Runs = 2,
+    [int]$Runs = 5,
     [int]$Warmup = 200,
     [string]$DB = "gtsdb,influx,vm,nsq"
 )
@@ -151,6 +151,18 @@ Live benchmark results comparing [GTSDB](https://github.com/abbychau/gtsdb), Inf
     $report = $report -replace '\(charts/', '(report/charts/'
     [System.IO.File]::WriteAllText($readmeFile, $header + $report, [System.Text.UTF8Encoding]::new($false))
     Write-Host "  README: $readmeFile" -ForegroundColor Green
+}
+
+# 5.6. Update homepage if present
+$homepageDir = "$RepoRoot\homepage"
+if (Test-Path $homepageDir) {
+    $homeCharts = "$homepageDir\public\charts"
+    $homeLib = "$homepageDir\lib"
+    if (-not (Test-Path $homeCharts)) { New-Item -ItemType Directory -Path $homeCharts -Force | Out-Null }
+    if (-not (Test-Path $homeLib)) { New-Item -ItemType Directory -Path $homeLib -Force | Out-Null }
+    Copy-Item -Path "$ReportDir\charts\*" -Destination $homeCharts -Force
+    Copy-Item -Path "$ReportDir\benchmark-data.json" -Destination "$homeLib\benchmark-data.json" -Force
+    Write-Host "  Homepage: charts + data updated" -ForegroundColor Green
 }
 
 # 6. Stop servers (unless -KeepAlive)

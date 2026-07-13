@@ -339,6 +339,7 @@ func preloadAndInit(cfg *Config, g *gtsdbDriver, i *influxDriver, v *vmDriver) {
 	if cfg.HasDB("influx") && i != nil {
 		fmt.Println("Pre-loading InfluxDB...")
 		i.preload(cfg.Sensors, 5000)
+		time.Sleep(500 * time.Millisecond) // wait for async flush to complete
 	}
 	if cfg.HasDB("vm") && v != nil {
 		fmt.Println("Pre-loading VictoriaMetrics...")
@@ -350,6 +351,7 @@ func preloadAndInit(cfg *Config, g *gtsdbDriver, i *influxDriver, v *vmDriver) {
 			}
 			v.WriteBatch(context.Background(), points)
 		}
+		time.Sleep(200 * time.Millisecond) // wait for VM ingestion
 	}
 	fmt.Println("Pre-load done.")
 }

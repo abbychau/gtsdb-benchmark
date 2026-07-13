@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -157,24 +159,102 @@ type gtsdbDataPoint struct {
 }
 
 func (d *gtsdbDriver) Read(ctx context.Context, key string, lastX int) (int, error) {
-	// Use shared connection with mutex for thread safety
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	payload := fmt.Sprintf(`{"operation":"read","key":"%s","read":{"lastx":%d}}`, key, lastX)
+	payload := fmt.Sprintf(`{"operation":"read","key":"%s","read":{"lastx":%d},"response_format":"binary"}`, key, lastX)
 	if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
 		return 0, err
 	}
-	resp, err := d.reader.ReadBytes('\n')
+	return readBinaryCount(d.reader)
+}
+
+// readBinaryFrame reads a length-prefixed binary frame from the reader.
+func readBinaryFrame(reader *bufio.Reader) ([]byte, error) {
+	// Read 4-byte length prefix
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(reader, lenBuf); err != nil {
+		return nil, err
+	}
+	frameLen := binary.BigEndian.Uint32(lenBuf)
+	if frameLen == 0 {
+		return nil, nil
+	}
+	// Read exact frame data
+	data := make([]byte, frameLen)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+// readBinaryCount reads a binary response and returns the total number of data points.
+func readBinaryCount(reader *bufio.Reader) (int, error) {
+	data, err := readBinaryFrame(reader)
 	if err != nil {
 		return 0, err
 	}
+	return parseBinaryCount(data), nil
+}
 
-	var result gtsdbReadResponse
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return 0, err
+func parseBinaryCount(data []byte) int {
+	if len(data) < 4 {
+		return 0
 	}
-	return len(result.Data), nil
+	totalPoints := 0
+	offset := 0
+	numKeys := binary.BigEndian.Uint32(data[offset:])
+	offset += 4
+	for i := uint32(0); i < numKeys; i++ {
+		if offset+2 > len(data) {
+			break
+		}
+		keyLen := binary.BigEndian.Uint16(data[offset:])
+		offset += 2 + int(keyLen)
+		if offset+4 > len(data) {
+			break
+		}
+		pointCount := binary.BigEndian.Uint32(data[offset:])
+		offset += 4
+		totalPoints += int(pointCount)
+		offset += int(pointCount) * 16
+	}
+	return totalPoints
+}
+
+// readBinaryMultiCount reads binary multi-data response and returns counts per key.
+func readBinaryMultiCount(reader *bufio.Reader) (map[string]int, error) {
+	data, err := readBinaryFrame(reader)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 4 {
+		return nil, nil
+	}
+	result := make(map[string]int)
+	offset := 0
+	numKeys := binary.BigEndian.Uint32(data[offset:])
+	offset += 4
+	for i := uint32(0); i < numKeys; i++ {
+		if offset+2 > len(data) {
+			break
+		}
+		keyLen := binary.BigEndian.Uint16(data[offset:])
+		offset += 2
+		if offset+int(keyLen) > len(data) {
+			break
+		}
+		key := string(data[offset : offset+int(keyLen)])
+		offset += int(keyLen)
+		if offset+4 > len(data) {
+			break
+		}
+		pointCount := binary.BigEndian.Uint32(data[offset:])
+		offset += 4
+		result[key] = int(pointCount)
+		offset += int(pointCount) * 16
+	}
+	return result, nil
 }
 
 // gtsdbReadFresh opens a new TCP connection, performs a read, and closes it.
@@ -208,28 +288,11 @@ func (d *gtsdbDriver) MultiRead(ctx context.Context, keys []string, lastX int) (
 	defer d.mu.Unlock()
 
 	keysJSON, _ := json.Marshal(keys)
-	payload := fmt.Sprintf(`{"operation":"multi-read","keys":%s,"read":{"lastx":%d}}`, string(keysJSON), lastX)
+	payload := fmt.Sprintf(`{"operation":"multi-read","keys":%s,"read":{"lastx":%d},"response_format":"binary"}`, string(keysJSON), lastX)
 	if _, err := d.conn.Write(append([]byte(payload), '\n')); err != nil {
 		return nil, err
 	}
-	resp, err := d.reader.ReadBytes('\n')
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Success   bool                        `json:"success"`
-		MultiData map[string][]gtsdbDataPoint `json:"multi_data"`
-	}
-	if err := json.Unmarshal(resp, &result); err != nil {
-		return nil, err
-	}
-
-	counts := make(map[string]int, len(result.MultiData))
-	for k, points := range result.MultiData {
-		counts[k] = len(points)
-	}
-	return counts, nil
+	return readBinaryMultiCount(d.reader)
 }
 
 func (d *gtsdbDriver) PubSub(ctx context.Context, key string, count int) (time.Duration, error) {

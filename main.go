@@ -6,6 +6,13 @@ import (
 	"os"
 )
 
+// readRuns returns the number of iterations for read benchmarks.
+// Single reads are very fast (sub-ms), so we need many iterations
+// to accumulate enough time for accurate measurement.
+func readRuns(baseRuns int) int {
+	return max(baseRuns*50, 200)
+}
+
 func main() {
 	cfg := ParseConfig()
 	if cfg.InfluxToken == "" {
@@ -73,7 +80,7 @@ func runGTSDBBenchmarks(cfg *Config, g *gtsdbDriver, results *[]*BenchmarkResult
 	}
 
 	if cfg.HasBench("Read (single)") {
-		r := runReadBenchmark(g, benchSensorKey, cfg.Count, cfg.Runs)
+		r := runReadBenchmark(g, benchSensorKey, cfg.Count, readRuns(cfg.Runs))
 		*results = append(*results, r)
 	}
 
@@ -111,7 +118,7 @@ func runInfluxBenchmarks(cfg *Config, i *influxDriver, results *[]*BenchmarkResu
 	}
 
 	if cfg.HasBench("Read (single)") {
-		r := runReadBenchmark(i, benchSensorKey, cfg.Count, cfg.Runs)
+		r := runReadBenchmark(i, benchSensorKey, cfg.Count, readRuns(cfg.Runs))
 		*results = append(*results, r)
 	}
 
@@ -144,7 +151,7 @@ func runVMBenchmarks(cfg *Config, v *vmDriver, results *[]*BenchmarkResult) {
 	}
 
 	if cfg.HasBench("Read (single)") {
-		r := runReadBenchmark(v, benchSensorKey, cfg.Count, cfg.Runs)
+		r := runReadBenchmark(v, benchSensorKey, cfg.Count, readRuns(cfg.Runs))
 		*results = append(*results, r)
 	}
 

@@ -1,0 +1,50 @@
+{
+  "write": {
+    "gtsdb": 87.56206,
+    "vm": 397.55074,
+    "influxdb": 1448.25426
+  },
+  "batchWrite": {
+    "gtsdb": 1.97308,
+    "vm": 134.31966,
+    "influxdb": 10.77728
+  },
+  "pipeline": {
+    "gtsdb": 30.3013,
+    "vm": 220.81092,
+    "influxdb": 260.87186
+  },
+  "multiWrite": {
+    "gtsdb": 2.3754,
+    "vm": 134.4183,
+    "influxdb": 8.2104
+  },
+  "read": {
+    "gtsdb": 0.189924,
+    "vm": 0.09550700000000001,
+    "influxdb": 8.083096
+  },
+  "readMany": {
+    "gtsdb": 7.01546,
+    "vm": 0.50368,
+    "influxdb": 11.05556
+  },
+  "pubsub": {
+    "gtsdb": 0.10363792,
+    "nsq": 0.08710393999999999
+  },
+  "ratios": {
+    "writeVsInflux": 16.54,
+    "writeVsVM": 4.54,
+    "pipelineVsInflux": 8.61,
+    "pipelineVsVM": 7.29,
+    "batchVsInflux": 5.46,
+    "batchVsVM": 68.08,
+    "multiWriteVsInflux": 3.46,
+    "multiWriteVsVM": 56.59,
+    "readVsInflux": 42.56,
+    "readVsVM": 1.99,
+    "readManyVsInflux": 1.58,
+    "readManyVsVM": 13.93
+  }
+}

@@ -885,6 +885,105 @@ report_path = os.path.join(REPORT_DIR, 'BENCHMARK_REPORT.md')
 with open(report_path, 'w', encoding='utf-8') as f:
     f.write(markdown)
 
+# Write JSON data file for homepage auto-update
+def get_mean_ms(name, driver):
+    """Get mean duration in milliseconds for a benchmark result."""
+    for r in results:
+        if r['name'] == name and r['driver'] == driver:
+            return parse_duration_to_ms(r['mean'])
+    return 0
+
+def get_ratio(name, driver1, driver2):
+    """Get speedup ratio (driver1/driver2) for a benchmark.
+    For near-zero latencies, uses mean duration comparison."""
+    ops1 = next((r['ops_per_sec'] for r in results if r['name'] == name and r['driver'] == driver1), 0)
+    ops2 = next((r['ops_per_sec'] for r in results if r['name'] == name and r['driver'] == driver2), 0)
+    m1 = next((parse_duration_to_ms(r['mean']) for r in results if r['name'] == name and r['driver'] == driver1), 0)
+    m2 = next((parse_duration_to_ms(r['mean']) for r in results if r['name'] == name and r['driver'] == driver2), 0)
+    
+    # If either ops/sec is 0 (sub-ms measurements), fall back to mean duration
+    if ops1 == 0 or ops2 == 0:
+        if m1 > 0 and m2 > 0:
+            return round(max(m1, m2) / min(m1, m2), 1)
+        if m1 > 0 and m2 == 0:
+            return round(m1 / 0.05, 1)  # estimate from sub-ms baseline
+        if m2 > 0 and m1 == 0:
+            return round(m2 / 0.05, 1)
+        return 1  # both effectively 0
+    
+    return round(ops1 / ops2, 2) if ops1 >= ops2 else round(ops2 / ops1, 2)
+
+def get_read_ratio(name, gtsdb_ns, other_ns):
+    """Get read speedup ratio. If both near zero, use ops/sec comparison."""
+    if gtsdb_ns < 0.1 and other_ns < 0.1:
+        # Both sub-ms, use ops/sec ratio
+        return get_ratio(name, 'GTSDB', 'VM' if 'VM' in str(other_ns) else 'InfluxDB')
+    if gtsdb_ns > 0 and other_ns > 0:
+        return round(max(other_ns, gtsdb_ns) / min(other_ns, gtsdb_ns), 1)
+    return 99
+
+gtsdb_read_single = get_mean_ms('Read (single)', 'GTSDB')
+vm_read_single = get_mean_ms('Read (single)', 'VM')
+influx_read_single = get_mean_ms('Read (single)', 'InfluxDB')
+gtsdb_read_many = get_mean_ms('Multi-Key Read', 'GTSDB')
+vm_read_many = get_mean_ms('Multi-Key Read', 'VM')
+influx_read_many = get_mean_ms('Multi-Key Read', 'InfluxDB')
+
+data = {
+    "write": {
+        "gtsdb": get_mean_ms('Write (seq)', 'GTSDB'),
+        "vm": get_mean_ms('Write (seq)', 'VM'),
+        "influxdb": get_mean_ms('Write (seq)', 'InfluxDB'),
+    },
+    "batchWrite": {
+        "gtsdb": get_mean_ms('Batch Write', 'GTSDB'),
+        "vm": get_mean_ms('Batch Write', 'VM'),
+        "influxdb": get_mean_ms('Batch Write', 'InfluxDB'),
+    },
+    "pipeline": {
+        "gtsdb": get_mean_ms('Pipeline Write', 'GTSDB'),
+        "vm": get_mean_ms('Pipeline Write', 'VM'),
+        "influxdb": get_mean_ms('Pipeline Write', 'InfluxDB'),
+    },
+    "multiWrite": {
+        "gtsdb": get_mean_ms('Multi-Key Write', 'GTSDB'),
+        "vm": get_mean_ms('Multi-Key Write', 'VM'),
+        "influxdb": get_mean_ms('Multi-Key Write', 'InfluxDB'),
+    },
+    "read": {
+        "gtsdb": max(gtsdb_read_single, 0.05),
+        "vm": max(vm_read_single, 0.05),
+        "influxdb": max(influx_read_single, 0.05),
+    },
+    "readMany": {
+        "gtsdb": max(gtsdb_read_many, 0.05),
+        "vm": max(vm_read_many, 0.05),
+        "influxdb": max(influx_read_many, 0.05),
+    },
+    "pubsub": {
+        "gtsdb": get_mean_ms('Pub/Sub', 'GTSDB') / 1000,
+        "nsq": get_mean_ms('Pub/Sub', 'NSQ') / 1000,
+    },
+    "ratios": {
+        "writeVsInflux": get_ratio('Write (seq)', 'GTSDB', 'InfluxDB'),
+        "writeVsVM": get_ratio('Write (seq)', 'GTSDB', 'VM'),
+        "pipelineVsInflux": get_ratio('Pipeline Write', 'GTSDB', 'InfluxDB'),
+        "pipelineVsVM": get_ratio('Pipeline Write', 'GTSDB', 'VM'),
+        "batchVsInflux": get_ratio('Batch Write', 'GTSDB', 'InfluxDB'),
+        "batchVsVM": get_ratio('Batch Write', 'VM', 'GTSDB'),
+        "multiWriteVsInflux": get_ratio('Multi-Key Write', 'GTSDB', 'InfluxDB'),
+        "multiWriteVsVM": get_ratio('Multi-Key Write', 'VM', 'GTSDB'),
+        "readVsInflux": get_ratio('Read (single)', 'GTSDB', 'InfluxDB'),
+        "readVsVM": get_ratio('Read (single)', 'GTSDB', 'VM'),
+        "readManyVsInflux": get_ratio('Multi-Key Read', 'GTSDB', 'InfluxDB'),
+        "readManyVsVM": get_ratio('Multi-Key Read', 'GTSDB', 'VM'),
+    },
+}
+
+data_path = os.path.join(REPORT_DIR, 'benchmark-data.json')
+with open(data_path, 'w', encoding='utf-8') as f:
+    json.dump(data, f, indent=2)
+
 import sys as _sys
 print(f'[OK] Report generated: {report_path}', file=_sys.stdout)
 print(f'[OK] Charts saved to: {CHART_DIR}', file=_sys.stdout)

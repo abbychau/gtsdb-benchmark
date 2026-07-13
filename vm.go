@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-
 	"fmt"
 	"io"
 	"net/http"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-
-	"github.com/VictoriaMetrics/metrics"
 )
 
 type vmDriver struct {
@@ -55,34 +52,20 @@ func (d *vmDriver) Close() error {
 }
 
 func (d *vmDriver) Write(ctx context.Context, key string, value float64) error {
-	s := metrics.NewSet()
-	s.GetOrCreateGauge(fmt.Sprintf(`benchmark_value{key="%s"}`, key), func() float64 {
-		return value
-	})
-
-	var buf bytes.Buffer
-	s.WritePrometheus(&buf)
-
-	return d.importPrometheus(ctx, &buf)
+	line := fmt.Sprintf("benchmark_value,key=%s value=%f %d\n", key, value, time.Now().Unix())
+	return d.importLine(ctx, line)
 }
 
 func (d *vmDriver) WriteBatch(ctx context.Context, points []KeyedPoint) error {
-	s := metrics.NewSet()
-
-	for _, p := range points {
-		s.GetOrCreateGauge(fmt.Sprintf(`benchmark_value{key="%s"}`, p.Key), func() float64 {
-			return p.Value
-		})
-	}
-
 	var buf bytes.Buffer
-	s.WritePrometheus(&buf)
-
-	return d.importPrometheus(ctx, &buf)
+	for _, p := range points {
+		fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", p.Key, p.Value, p.Timestamp)
+	}
+	return d.importLine(ctx, buf.String())
 }
 
-func (d *vmDriver) importPrometheus(ctx context.Context, body io.Reader) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", d.url+"/api/v1/import/prometheus", body)
+func (d *vmDriver) importLine(ctx context.Context, lines string) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", d.url+"/api/v1/import", strings.NewReader(lines))
 	if err != nil {
 		return err
 	}
@@ -102,19 +85,21 @@ func (d *vmDriver) importPrometheus(ctx context.Context, body io.Reader) error {
 }
 
 func (d *vmDriver) Read(ctx context.Context, key string, lastX int) (int, error) {
-	// Use a dedicated client for reads to avoid connection pool exhaustion from writes
 	readClient := &http.Client{Timeout: 30 * time.Second}
-	return d.readManyCtx(ctx, readClient, []string{key}, lastX)
+	return d.readManyCtx(ctx, readClient, []string{key}, lastX, 0)
 }
 
 func (d *vmDriver) readMany(ctx context.Context, keys []string, lastX int) (int, error) {
-	return d.readManyCtx(ctx, d.client, keys, lastX)
+	return d.readManyCtx(ctx, d.client, keys, lastX, 0)
 }
 
-func (d *vmDriver) readManyCtx(ctx context.Context, client *http.Client, keys []string, lastX int) (int, error) {
-	// Use query_range to get last N points per key
-	end := 1700001000
-	start := end - lastX
+func (d *vmDriver) readManyCtx(ctx context.Context, client *http.Client, keys []string, lastX int, _ int64) (int, error) {
+	// Query returns exactly lastX points: step=1 over lastX seconds
+	end := int64(1700005000)
+	start := end - int64(lastX)
+	if start < 1700000000 {
+		start = 1700000000
+	}
 	query := fmt.Sprintf(`benchmark_value{key=~"%s"}`, strings.Join(keys, "|"))
 	req, err := http.NewRequestWithContext(ctx, "GET", d.url+"/api/v1/query_range", nil)
 	if err != nil {
@@ -169,41 +154,28 @@ func (d *vmDriver) readManyCtx(ctx context.Context, client *http.Client, keys []
 
 func (d *vmDriver) multiWrite(numPointsPerSensor, numSensors int) (success, failure uint64, elapsed time.Duration) {
 	start := time.Now()
+	now := time.Now().Unix()
 
-	s := metrics.NewSet()
+	var buf bytes.Buffer
 	for i := 0; i < numSensors; i++ {
 		key := fmt.Sprintf("benchmark_sensor_%d", i)
 		for j := 0; j < numPointsPerSensor; j++ {
-			val := float64(j) * 1.5
-			s.GetOrCreateGauge(fmt.Sprintf(`benchmark_value{key="%s"}`, key), func() float64 {
-				return val
-			})
+			fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", key, float64(j)*1.5, now+int64(j))
 			success++
 		}
 	}
 
-	var buf bytes.Buffer
-	s.WritePrometheus(&buf)
-	d.importPrometheus(context.Background(), &buf)
-
+	d.importLine(context.Background(), buf.String())
 	elapsed = time.Since(start)
 	return
 }
 
-// WritePipelined for VM uses Prometheus exposition format with multiple metric lines.
 func (d *vmDriver) writePipelined(ctx context.Context, key string, values []float64) (int, error) {
-	s := metrics.NewSet()
-
-	for _, v := range values {
-		s.GetOrCreateGauge(fmt.Sprintf(`benchmark_value{key="%s"}`, key), func() float64 {
-			return v
-		})
-	}
-
 	var buf bytes.Buffer
-	s.WritePrometheus(&buf)
-
-	if err := d.importPrometheus(ctx, &buf); err != nil {
+	for i, v := range values {
+		fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", key, v, time.Now().Unix()+int64(i))
+	}
+	if err := d.importLine(ctx, buf.String()); err != nil {
 		return 0, err
 	}
 	return len(values), nil
