@@ -1,6 +1,6 @@
 # Time Series Database Benchmark Report
 
-**Generated:** 2026-07-13 02:48:07
+**Generated:** 2026-07-13 19:05:35
 
 ## Overview
 
@@ -46,9 +46,9 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 90.75415 ms | 1.33775 ms | 89.4164 ms | 92.0919 ms | 89.4164 ms | 92.0919 ms | 92.0919 ms | 33,056.3 |
-| InfluxDB | 1.58 s | 16.80435 ms | 1.56 s | 1.60 s | 1.56 s | 1.60 s | 1.60 s | 1,897.5 |
-| VM | 180.2979 ms | 978 us | 179.3197 ms | 181.2761 ms | 179.3197 ms | 181.2761 ms | 181.2761 ms | 16,639.1 |
+| GTSDB | 83.6477 ms | 2.3063 ms | 81.3414 ms | 85.954 ms | 81.3414 ms | 85.954 ms | 85.954 ms | 35,864.7 |
+| InfluxDB | 1.45 s | 10.19085 ms | 1.44 s | 1.46 s | 1.44 s | 1.46 s | 1.46 s | 2,063.4 |
+| VM | 157.234 ms | 2.1358 ms | 155.0982 ms | 159.3698 ms | 155.0982 ms | 159.3698 ms | 159.3698 ms | 19,079.8 |
 
 ### Pipelined Writes (GTSDB)
 
@@ -56,9 +56,9 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 31.01835 ms | 2.57525 ms | 28.4431 ms | 33.5936 ms | 28.4431 ms | 33.5936 ms | 33.5936 ms | 96,716.9 |
-| InfluxDB | 282.83875 ms | 2.02125 ms | 280.8175 ms | 284.86 ms | 280.8175 ms | 284.86 ms | 284.86 ms | 10,606.8 |
-| VM | 39.21335 ms | 737 us | 38.4761 ms | 39.9506 ms | 38.4761 ms | 39.9506 ms | 39.9506 ms | 76,504.6 |
+| GTSDB | 27.90925 ms | 471 us | 27.4385 ms | 28.38 ms | 27.4385 ms | 28.38 ms | 28.38 ms | 107,491.2 |
+| InfluxDB | 259.73335 ms | 2.96045 ms | 256.7729 ms | 262.6938 ms | 256.7729 ms | 262.6938 ms | 262.6938 ms | 11,550.3 |
+| VM | 36.3654 ms | 2.4076 ms | 33.9578 ms | 38.773 ms | 33.9578 ms | 38.773 ms | 38.773 ms | 82,496.0 |
 
 ### Batch/Bulk Writes
 
@@ -66,9 +66,9 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 10.49815 ms | 7.90675 ms | 2.5914 ms | 18.4049 ms | 2.5914 ms | 18.4049 ms | 18.4049 ms | 285,764.6 |
-| InfluxDB | 11.78285 ms | 749 us | 11.0341 ms | 12.5316 ms | 11.0341 ms | 12.5316 ms | 12.5316 ms | 254,607.3 |
-| VM | 512 us | 400 ns | 511 us | 512 us | 511 us | 512 us | 512 us | 5,861,664.7 |
+| GTSDB | 2.56965 ms | 1.02965 ms | 1.54 ms | 3.5993 ms | 1.54 ms | 3.5993 ms | 3.5993 ms | 1,167,474.2 |
+| InfluxDB | 10.80395 ms | 624 us | 10.1796 ms | 11.4283 ms | 10.1796 ms | 11.4283 ms | 11.4283 ms | 277,676.2 |
+| VM | 278 us | 278 us | 0 s | 556 us | 0 s | 556 us | 556 us | 10,781,671.2 |
 
 ### Multi-Sensor Concurrent Writes
 
@@ -76,9 +76,9 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 3.7269 ms | 1.6691 ms | 2.0578 ms | 5.396 ms | 2.0578 ms | 5.396 ms | 5.396 ms | 804,958.5 |
-| InfluxDB | 9.6131 ms | 1.324 ms | 8.2891 ms | 10.9371 ms | 8.2891 ms | 10.9371 ms | 10.9371 ms | 312,074.1 |
-| VM | 515 us | 2 us | 513 us | 517 us | 513 us | 517 us | 517 us | 5,826,939.9 |
+| GTSDB | 2.84295 ms | 780 us | 2.0634 ms | 3.6225 ms | 2.0634 ms | 3.6225 ms | 3.6225 ms | 1,055,241.9 |
+| InfluxDB | 7.95075 ms | 223 us | 7.7282 ms | 8.1733 ms | 7.7282 ms | 8.1733 ms | 8.1733 ms | 377,322.9 |
+| VM | 514 us | 4 us | 510 us | 517 us | 510 us | 517 us | 517 us | 5,838,847.8 |
 
 ## Read Benchmarks
 
@@ -88,17 +88,17 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 4.07595 ms | 3.05205 ms | 1.0239 ms | 7.128 ms | 1.0239 ms | 7.128 ms | 7.128 ms | 245.3 |
-| InfluxDB | 8.187 ms | 64 us | 8.1225 ms | 8.2515 ms | 8.1225 ms | 8.2515 ms | 8.2515 ms | 122.1 |
-| VM | 306 us | 306 us | 0 s | 612 us | 0 s | 612 us | 612 us | 3,265.3 |
+| GTSDB | 1.04145 ms | 12 us | 1.0292 ms | 1.0537 ms | 1.0292 ms | 1.0537 ms | 1.0537 ms | 960.2 |
+| InfluxDB | 8.72975 ms | 496 us | 8.2333 ms | 9.2262 ms | 8.2333 ms | 9.2262 ms | 9.2262 ms | 114.6 |
+| VM | 257 us | 257 us | 0 s | 515 us | 0 s | 515 us | 515 us | 3,884.2 |
 
 ### Read-Many (5000 Reads)
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 9.35585 ms | 2.06505 ms | 7.2908 ms | 11.4209 ms | 7.2908 ms | 11.4209 ms | 11.4209 ms | 2,672,124.9 |
-| InfluxDB | 13.0263 ms | 249 us | 12.7773 ms | 13.2753 ms | 12.7773 ms | 13.2753 ms | 13.2753 ms | 1,919,194.2 |
-| VM | 260 us | 260 us | 0 s | 521 us | 0 s | 521 us | 521 us | 96,024,582.3 |
+| GTSDB | 6.979 ms | 1.2161 ms | 5.7629 ms | 8.1951 ms | 5.7629 ms | 8.1951 ms | 8.1951 ms | 3,582,175.1 |
+| InfluxDB | 10.62795 ms | 695 us | 9.9325 ms | 11.3234 ms | 9.9325 ms | 11.3234 ms | 11.3234 ms | 2,352,288.1 |
+| VM | 258 us | 258 us | 0 s | 516 us | 0 s | 516 us | 516 us | 96,918,007.4 |
 
 ## Pub/Sub Benchmark
 
@@ -106,60 +106,60 @@ This report compares performance of the following time-series databases:
 
 | Driver | Mean | StdDev | Min | Max | P50 | P95 | P99 | Ops/sec |
 |--------|------|--------|-----|-----|-----|-----|-----|---------|
-| GTSDB | 119.1475 ms | 2.1041 ms | 117.0434 ms | 121.2516 ms | 117.0434 ms | 121.2516 ms | 121.2516 ms | 8.4 |
-| NSQ | 98.61645 ms | 1.20225 ms | 97.4142 ms | 99.8187 ms | 97.4142 ms | 99.8187 ms | 99.8187 ms | 10.1 |
+| GTSDB | 108.1744 ms | 4.2322 ms | 103.9422 ms | 112.4066 ms | 103.9422 ms | 112.4066 ms | 112.4066 ms | 9.2 |
+| NSQ | 88.3413 ms | 46 us | 88.2949 ms | 88.3877 ms | 88.2949 ms | 88.3877 ms | 88.3877 ms | 11.3 |
 
 ## Key Findings
 
 ### Sequential Write Throughput
 
-- #1 **GTSDB**: **33,056 ops/sec** (90.75415 ms)
-- #2 **VM**: **16,639 ops/sec** (180.2979 ms)
-- #3 **InfluxDB**: **1,897 ops/sec** (1.58 s)
+- #1 **GTSDB**: **35,865 ops/sec** (83.6477 ms)
+- #2 **VM**: **19,080 ops/sec** (157.234 ms)
+- #3 **InfluxDB**: **2,063 ops/sec** (1.45 s)
 
 ### Batch Write Throughput
 
-- #1 **VM**: **5,861,665 ops/sec** (512 us)
-- #2 **GTSDB**: **285,765 ops/sec** (10.49815 ms)
-- #3 **InfluxDB**: **254,607 ops/sec** (11.78285 ms)
+- #1 **VM**: **10,781,671 ops/sec** (278 us)
+- #2 **GTSDB**: **1,167,474 ops/sec** (2.56965 ms)
+- #3 **InfluxDB**: **277,676 ops/sec** (10.80395 ms)
 
 ### Multi-Sensor Write Throughput
 
-- #1 **VM**: **5,826,940 ops/sec** (515 us)
-- #2 **GTSDB**: **804,959 ops/sec** (3.7269 ms)
-- #3 **InfluxDB**: **312,074 ops/sec** (9.6131 ms)
+- #1 **VM**: **5,838,848 ops/sec** (514 us)
+- #2 **GTSDB**: **1,055,242 ops/sec** (2.84295 ms)
+- #3 **InfluxDB**: **377,323 ops/sec** (7.95075 ms)
 
 ### Read Performance
 
-- #1 **VM**: **3,265 ops/sec** (306 us)
-- #2 **GTSDB**: **245 ops/sec** (4.07595 ms)
-- #3 **InfluxDB**: **122 ops/sec** (8.187 ms)
+- #1 **VM**: **3,884 ops/sec** (257 us)
+- #2 **GTSDB**: **960 ops/sec** (1.04145 ms)
+- #3 **InfluxDB**: **115 ops/sec** (8.72975 ms)
 
 ### Pub/Sub Latency
 
-- #1 **NSQ**: **98.61645 ms** delivery latency
-- #2 **GTSDB**: **119.1475 ms** delivery latency
+- #1 **NSQ**: **88.3413 ms** delivery latency
+- #2 **GTSDB**: **108.1744 ms** delivery latency
 
 ## Head-to-Head Comparison
 
 | Benchmark | Comparison | Ratio | Winner |
 |-----------|------------|-------|--------|
-| Write (seq) | GTSDB vs InfluxDB | 17.42x | **GTSDB** |
-| Write (seq) | GTSDB vs VM | 1.99x | **GTSDB** |
-| Pipeline Write | GTSDB vs InfluxDB | 9.12x | **GTSDB** |
-| Pipeline Write | GTSDB vs VM | 1.26x | **GTSDB** |
-| Batch Write | GTSDB vs InfluxDB | 1.12x | **GTSDB** |
-| Batch Write | GTSDB vs VM | 20.51x | **VM** |
-| Read (single) | GTSDB vs InfluxDB | 2.01x | **GTSDB** |
-| Read (single) | GTSDB vs VM | 13.31x | **VM** |
-| Multi-Key Write | GTSDB vs InfluxDB | 2.58x | **GTSDB** |
-| Multi-Key Write | GTSDB vs VM | 7.24x | **VM** |
-| Pub/Sub | GTSDB vs NSQ | 0.83x latency | **NSQ** |
-| Multi-Key Read | GTSDB vs InfluxDB | 1.39x | **GTSDB** |
-| Multi-Key Read | GTSDB vs VM | 35.94x | **VM** |
-| Write (seq) | InfluxDB vs VM | 8.77x | **VM** |
-| Pipeline Write | InfluxDB vs VM | 7.21x | **VM** |
-| Batch Write | InfluxDB vs VM | 23.02x | **VM** |
-| Read (single) | InfluxDB vs VM | 26.73x | **VM** |
-| Multi-Key Write | InfluxDB vs VM | 18.67x | **VM** |
-| Multi-Key Read | InfluxDB vs VM | 50.03x | **VM** |
+| Write (seq) | GTSDB vs InfluxDB | 17.38x | **GTSDB** |
+| Write (seq) | GTSDB vs VM | 1.88x | **GTSDB** |
+| Pipeline Write | GTSDB vs InfluxDB | 9.31x | **GTSDB** |
+| Pipeline Write | GTSDB vs VM | 1.30x | **GTSDB** |
+| Batch Write | GTSDB vs InfluxDB | 4.20x | **GTSDB** |
+| Batch Write | GTSDB vs VM | 9.24x | **VM** |
+| Read (single) | GTSDB vs InfluxDB | 8.38x | **GTSDB** |
+| Read (single) | GTSDB vs VM | 4.05x | **VM** |
+| Multi-Key Write | GTSDB vs InfluxDB | 2.80x | **GTSDB** |
+| Multi-Key Write | GTSDB vs VM | 5.53x | **VM** |
+| Pub/Sub | GTSDB vs NSQ | 0.82x latency | **NSQ** |
+| Multi-Key Read | GTSDB vs InfluxDB | 1.52x | **GTSDB** |
+| Multi-Key Read | GTSDB vs VM | 27.06x | **VM** |
+| Write (seq) | InfluxDB vs VM | 9.25x | **VM** |
+| Pipeline Write | InfluxDB vs VM | 7.14x | **VM** |
+| Batch Write | InfluxDB vs VM | 38.83x | **VM** |
+| Read (single) | InfluxDB vs VM | 33.91x | **VM** |
+| Multi-Key Write | InfluxDB vs VM | 15.47x | **VM** |
+| Multi-Key Read | InfluxDB vs VM | 41.20x | **VM** |
