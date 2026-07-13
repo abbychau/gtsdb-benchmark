@@ -1,50 +1,72 @@
 {
   "write": {
-    "gtsdb": 87.56206,
-    "vm": 397.55074,
-    "influxdb": 1448.25426
+    "gtsdb": 90.96846,
+    "vm": 156.97822,
+    "influxdb": 1474.15492
   },
   "batchWrite": {
-    "gtsdb": 1.97308,
-    "vm": 134.31966,
-    "influxdb": 10.77728
+    "gtsdb": 2.29024,
+    "vm": 0.92992,
+    "influxdb": 10.52154
   },
   "pipeline": {
-    "gtsdb": 30.3013,
-    "vm": 220.81092,
-    "influxdb": 260.87186
+    "gtsdb": 29.40446,
+    "vm": 35.18742,
+    "influxdb": 270.7079
   },
   "multiWrite": {
-    "gtsdb": 2.3754,
-    "vm": 134.4183,
-    "influxdb": 8.2104
+    "gtsdb": 2.37232,
+    "vm": 0.61746,
+    "influxdb": 8.45542
   },
   "read": {
-    "gtsdb": 0.189924,
-    "vm": 0.09550700000000001,
-    "influxdb": 8.083096
+    "gtsdb": 0.188572,
+    "vm": 0.083119,
+    "influxdb": 8.347934
   },
   "readMany": {
-    "gtsdb": 7.01546,
-    "vm": 0.50368,
-    "influxdb": 11.05556
+    "gtsdb": 0.72188,
+    "vm": 0.20362,
+    "influxdb": 13.08904
   },
   "pubsub": {
-    "gtsdb": 0.10363792,
-    "nsq": 0.08710393999999999
+    "gtsdb": 0.1109377,
+    "nsq": 0.08995884
   },
   "ratios": {
-    "writeVsInflux": 16.54,
-    "writeVsVM": 4.54,
-    "pipelineVsInflux": 8.61,
-    "pipelineVsVM": 7.29,
-    "batchVsInflux": 5.46,
-    "batchVsVM": 68.08,
-    "multiWriteVsInflux": 3.46,
-    "multiWriteVsVM": 56.59,
-    "readVsInflux": 42.56,
-    "readVsVM": 1.99,
-    "readManyVsInflux": 1.58,
-    "readManyVsVM": 13.93
+    "writeVsInflux": 16.21,
+    "writeVsVM": 1.73,
+    "pipelineVsInflux": 9.21,
+    "pipelineVsVM": 1.2,
+    "batchVsInflux": 4.59,
+    "batchVsVM": 2.46,
+    "multiWriteVsInflux": 3.56,
+    "multiWriteVsVM": 3.84,
+    "readVsInflux": 44.27,
+    "readVsVM": 2.27,
+    "readManyVsInflux": 18.13,
+    "readManyVsVM": 3.55
+  },
+  "resources": {
+    "GTSDB": {
+      "memory_mb": 30.4,
+      "cpu_sec": 1.2,
+      "disk_kb": 1589.4
+    },
+    "InfluxDB": {
+      "memory_mb": 136.6,
+      "cpu_sec": 12.1,
+      "disk_kb": 32774.7
+    },
+    "VM": {
+      "memory_mb": 144.3,
+      "cpu_sec": 1.9,
+      "disk_kb": 189.6
+    },
+    "NSQ": {
+      "memory_mb": 16.2,
+      "cpu_sec": 0.6,
+      "disk_kb": 0
+    }
   }
 }

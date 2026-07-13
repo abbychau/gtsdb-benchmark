@@ -347,7 +347,7 @@ func preloadAndInit(cfg *Config, g *gtsdbDriver, i *influxDriver, v *vmDriver) {
 			points := make([]KeyedPoint, 5000)
 			key := fmt.Sprintf("bench_sensor_%d", s)
 			for j := 0; j < 5000; j++ {
-				points[j] = KeyedPoint{Key: key, Value: float64(j) * 1.5, Timestamp: 1700000000 + int64(j)}
+				points[j] = KeyedPoint{Key: key, Value: rand.Float64() * 100, Timestamp: 1700000000 + int64(j)}
 			}
 			v.WriteBatch(context.Background(), points)
 		}

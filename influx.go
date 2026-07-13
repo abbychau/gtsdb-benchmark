@@ -141,7 +141,7 @@ func (d *influxDriver) preload(numSensors, pointsPerSensor int) error {
 			p := influxdb2.NewPoint(
 				"sensor",
 				map[string]string{"key": fmt.Sprintf("sensor%d", i)},
-				map[string]interface{}{"value": float64(j) * 1.5},
+				map[string]interface{}{"value": rand.Float64() * 100},
 				time.Unix(int64(1700000000+j), 0),
 			)
 			writeAPI.WritePoint(p)

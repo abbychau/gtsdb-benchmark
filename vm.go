@@ -52,32 +52,51 @@ func (d *vmDriver) Close() error {
 }
 
 func (d *vmDriver) Write(ctx context.Context, key string, value float64) error {
-	line := fmt.Sprintf("benchmark_value,key=%s value=%f %d\n", key, value, time.Now().Unix())
-	return d.importLine(ctx, line)
+	return d.importJSON(ctx, fmt.Sprintf(
+		`{"metric":{"__name__":"benchmark_value","key":"%s"},"values":[%f],"timestamps":[%d]}`+"\n",
+		key, value, time.Now().Unix()))
 }
 
 func (d *vmDriver) WriteBatch(ctx context.Context, points []KeyedPoint) error {
-	var buf bytes.Buffer
+	groups := make(map[string][]KeyedPoint)
 	for _, p := range points {
-		fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", p.Key, p.Value, p.Timestamp)
+		groups[p.Key] = append(groups[p.Key], p)
 	}
-	return d.importLine(ctx, buf.String())
+	var buf bytes.Buffer
+	for key, pts := range groups {
+		buf.WriteString(`{"metric":{"__name__":"benchmark_value","key":"`)
+		buf.WriteString(key)
+		buf.WriteString(`"},"values":[`)
+		for i, p := range pts {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%f", p.Value)
+		}
+		buf.WriteString(`],"timestamps":[`)
+		for i, p := range pts {
+			if i > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%d", p.Timestamp)
+		}
+		buf.WriteString("]}\n")
+	}
+	return d.importJSON(ctx, buf.String())
 }
 
-func (d *vmDriver) importLine(ctx context.Context, lines string) error {
-	req, err := http.NewRequestWithContext(ctx, "POST", d.url+"/api/v1/import", strings.NewReader(lines))
+func (d *vmDriver) importJSON(ctx context.Context, body string) error {
+	req, err := http.NewRequestWithContext(ctx, "POST", d.url+"/api/v1/import", strings.NewReader(body))
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "text/plain")
-
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := d.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
-
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("vm import returned %d", resp.StatusCode)
 	}
@@ -159,23 +178,52 @@ func (d *vmDriver) multiWrite(numPointsPerSensor, numSensors int) (success, fail
 	var buf bytes.Buffer
 	for i := 0; i < numSensors; i++ {
 		key := fmt.Sprintf("benchmark_sensor_%d", i)
+		buf.WriteString(`{"metric":{"__name__":"benchmark_value","key":"`)
+		buf.WriteString(key)
+		buf.WriteString(`"},"values":[`)
 		for j := 0; j < numPointsPerSensor; j++ {
-			fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", key, float64(j)*1.5, now+int64(j))
-			success++
+			if j > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%f", float64(j)*1.5)
 		}
+		buf.WriteString(`],"timestamps":[`)
+		for j := 0; j < numPointsPerSensor; j++ {
+			if j > 0 {
+				buf.WriteByte(',')
+			}
+			fmt.Fprintf(&buf, "%d", now+int64(j))
+		}
+		buf.WriteString("]}\n")
+		success += uint64(numPointsPerSensor)
 	}
 
-	d.importLine(context.Background(), buf.String())
+	d.importJSON(context.Background(), buf.String())
 	elapsed = time.Since(start)
 	return
 }
 
 func (d *vmDriver) writePipelined(ctx context.Context, key string, values []float64) (int, error) {
 	var buf bytes.Buffer
+	buf.WriteString(`{"metric":{"__name__":"benchmark_value","key":"`)
+	buf.WriteString(key)
+	buf.WriteString(`"},"values":[`)
+	now := time.Now().Unix()
 	for i, v := range values {
-		fmt.Fprintf(&buf, "benchmark_value,key=%s value=%f %d\n", key, v, time.Now().Unix()+int64(i))
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		fmt.Fprintf(&buf, "%f", v)
 	}
-	if err := d.importLine(ctx, buf.String()); err != nil {
+	buf.WriteString(`],"timestamps":[`)
+	for i := range values {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		fmt.Fprintf(&buf, "%d", now+int64(i))
+	}
+	buf.WriteString("]}\n")
+	if err := d.importJSON(ctx, buf.String()); err != nil {
 		return 0, err
 	}
 	return len(values), nil

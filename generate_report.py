@@ -408,6 +408,14 @@ def chart_pipeline():
 def get_resource_usage():
     """Collect memory (RSS), CPU, and disk usage for each database process."""
     import subprocess as _sp
+    import urllib.request as _req
+    
+    # Force VM to flush in-memory data to disk before measuring
+    try:
+        _req.urlopen("http://localhost:8428/internal/force_merge?partition_prefix=", timeout=10)
+    except Exception:
+        pass
+    
     info = {}
     
     # Map process names to data directories
@@ -465,9 +473,9 @@ def get_resource_usage():
                         total_size += os.path.getsize(fp)
                     except OSError:
                         pass
-            info[name]['disk_mb'] = round(total_size / (1024*1024), 2)
+            info[name]['disk_kb'] = round(total_size / 1024, 1)
         else:
-            info[name]['disk_mb'] = 0
+            info[name]['disk_kb'] = 0
     
     return info
 
@@ -493,13 +501,13 @@ def chart_resource_usage():
     
     # Right: Disk
     ax = axes[1]
-    disks = [resources.get(d, {}).get('disk_mb', 0) for d in dbs]
+    disks = [resources.get(d, {}).get('disk_kb', 0) for d in dbs]
     bars = ax.bar(dbs, disks, color=colors, edgecolor='white', linewidth=0.5, width=0.5)
     for bar, v in zip(bars, disks):
         if v > 0:
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f'{v:.2f} MB', ha='center', va='bottom', fontsize=9, fontweight='bold', color='#e0e0e0')
-    ax.set_ylabel('Data on Disk (MB)', fontsize=11, fontweight='bold')
+                    f'{v:.1f} KB', ha='center', va='bottom', fontsize=9, fontweight='bold', color='#e0e0e0')
+    ax.set_ylabel('Data on Disk (KB)', fontsize=11, fontweight='bold')
     ax.set_title('Disk Usage', fontsize=13, fontweight='bold', color='#ffffff')
     ax.grid(axis='y', alpha=0.3)
     
@@ -978,6 +986,7 @@ data = {
         "readManyVsInflux": get_ratio('Multi-Key Read', 'GTSDB', 'InfluxDB'),
         "readManyVsVM": get_ratio('Multi-Key Read', 'GTSDB', 'VM'),
     },
+    "resources": get_resource_usage(),
 }
 
 data_path = os.path.join(REPORT_DIR, 'benchmark-data.json')

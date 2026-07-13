@@ -60,7 +60,7 @@ if (-not (Wait-Port 5555 5)) { Write-Warning "GTSDB port 5555 not ready" }
 # ═══════════════════════════════════════════════════════════════════════
 Write-Host "=== Starting VictoriaMetrics ===" -ForegroundColor Green
 $pv = Start-Process -FilePath "$Desktop\victoria-metrics-windows-amd64-prod.exe" `
-    -ArgumentList "-storageDataPath","$Temp\vm-data","-retentionPeriod","1","-httpListenAddr",":8428" `
+    -ArgumentList "-storageDataPath","$Temp\vm-data","-retentionPeriod","1200","-httpListenAddr",":8428" `
     -PassThru -NoNewWindow `
     -RedirectStandardOutput "$Temp\vm_stdout.log" `
     -RedirectStandardError "$Temp\vm_stderr.log"

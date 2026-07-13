@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net"
 	"strings"
 	"sync"
@@ -363,7 +364,7 @@ func (d *gtsdbDriver) preloadTCP(numSensors, pointsPerSensor int) error {
 		for j := 0; j < pointsPerSensor; j++ {
 			points = append(points, KeyedPoint{
 				Key:       fmt.Sprintf("bench_sensor_%d", i),
-				Value:     float64(j) * 1.5,
+				Value:     rand.Float64() * 100,
 				Timestamp: 1700000000 + int64(j),
 			})
 		}
