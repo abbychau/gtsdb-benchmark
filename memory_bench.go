@@ -36,71 +36,94 @@ func sampleMemory() (AllocMB, SysMB float64, GCDone int32) {
 
 // MemoryBenchConfig configures the memory-over-time benchmark.
 type MemoryBenchConfig struct {
-	GTSDBAddr string
-	Duration  time.Duration
-	Interval  time.Duration
-	Keys      int
+	GTSDBAddr   string
+	Duration    time.Duration
+	Interval    time.Duration
+	Keys        int
+	Concurrency int // number of parallel pipelined connections
+	Pipeline    int // number of writes to pipeline per batch
+	BatchSize   int // number of keys per batch-write (0 = single writes)
 }
 
-func runMemoryBench(cfg MemoryBenchConfig) ([]MemorySample, int64, int64, error) {
-	conn, err := net.Dial("tcp", cfg.GTSDBAddr)
+func pipelinedWorker(tcpAddr string, keys []string, done <-chan struct{}, writeCount, readCount *atomic.Int64) {
+	conn, err := net.Dial("tcp", tcpAddr)
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("connect to GTSDB: %w", err)
+		return
 	}
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
+	buf := make([]byte, 0, 4096)
 
-	fmt.Fprintf(os.Stderr, "Connected to GTSDB at %s\n", cfg.GTSDBAddr)
-	fmt.Fprintf(os.Stderr, "Sampling memory every %v for %v...\n", cfg.Interval, cfg.Duration)
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
 
-	keys := make([]string, cfg.Keys)
-	for i := range keys {
-		keys[i] = fmt.Sprintf("mem_bench_sensor_%d", i)
-	}
-
-	var samples []MemorySample
-	startTime := time.Now()
-	endTime := startTime.Add(cfg.Duration)
-
-	alloc, sys, gc := sampleMemory()
-	samples = append(samples, MemorySample{T: 0, AllocMB: alloc, SysMB: sys, GCDone: gc})
-
-	var writeCount, readCount atomic.Int64
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			if time.Now().After(endTime) {
-				return
-			}
+		// Pipeline: write N payloads without waiting
+		n := 100
+		buf = buf[:0]
+		for i := 0; i < n; i++ {
 			key := keys[rand.IntN(len(keys))]
-			payload := fmt.Sprintf(
+			buf = append(buf, []byte(fmt.Sprintf(
 				`{"operation":"write","key":"%s","write":{"value":%f}}`+"\n",
 				key, rand.Float64()*100,
+			))...)
+		}
+		if _, err := conn.Write(buf); err != nil {
+			return
+		}
+		// Drain responses
+		for i := 0; i < n; i++ {
+			if _, err := reader.ReadBytes('\n'); err != nil {
+				return
+			}
+		}
+		writeCount.Add(int64(n))
+
+		// Occasional batch read
+		if rand.IntN(20) == 0 {
+			key := keys[rand.IntN(len(keys))]
+			rp := fmt.Sprintf(
+				`{"operation":"read","key":"%s","read":{"lastx":1000}}`+"\n",
+				key,
 			)
-			if _, err := conn.Write([]byte(payload)); err != nil {
+			if _, err := conn.Write([]byte(rp)); err != nil {
 				return
 			}
 			if _, err := reader.ReadBytes('\n'); err != nil {
 				return
 			}
-			writeCount.Add(1)
-			if rand.IntN(10) == 0 {
-				rp := fmt.Sprintf(
-					`{"operation":"read","key":"%s","read":{"lastx":100}}`+"\n",
-					key,
-				)
-				if _, err := conn.Write([]byte(rp)); err != nil {
-					return
-				}
-				if _, err := reader.ReadBytes('\n'); err != nil {
-					return
-				}
-				readCount.Add(1)
-			}
+			readCount.Add(1)
 		}
-	}()
+	}
+}
+
+func runMemoryBench(cfg MemoryBenchConfig) ([]MemorySample, int64, int64, error) {
+	fmt.Fprintf(os.Stderr, "Connecting to GTSDB at %s...\n", cfg.GTSDBAddr)
+	fmt.Fprintf(os.Stderr, "Workload: %d concurrent pipelines × %d pipeline depth, %d keys, %d batch size\n",
+		cfg.Concurrency, cfg.Pipeline, cfg.Keys, cfg.BatchSize)
+	fmt.Fprintf(os.Stderr, "Sampling memory every %v for %v...\n", cfg.Interval, cfg.Duration)
+
+	keys := make([]string, cfg.Keys)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("mem_stress_%d", i)
+	}
+
+	var samples []MemorySample
+	startTime := time.Now()
+
+	alloc, sys, gc := sampleMemory()
+	samples = append(samples, MemorySample{T: 0, AllocMB: alloc, SysMB: sys, GCDone: gc})
+
+	var writeCount, readCount atomic.Int64
+	done := make(chan struct{})
+
+	// Start concurrent pipelined workers
+	for i := 0; i < cfg.Concurrency; i++ {
+		go pipelinedWorker(cfg.GTSDBAddr, keys, done, &writeCount, &readCount)
+	}
 
 	sampleTicker := time.NewTicker(cfg.Interval)
 	defer sampleTicker.Stop()
@@ -113,15 +136,20 @@ func runMemoryBench(cfg MemoryBenchConfig) ([]MemorySample, int64, int64, error)
 		samples = append(samples, MemorySample{T: elapsed, AllocMB: alloc, SysMB: sys, GCDone: gc})
 	}
 
+	close(done)
+
 	return samples, writeCount.Load(), readCount.Load(), nil
 }
 
 func main() {
 	cfg := MemoryBenchConfig{
-		GTSDBAddr: "localhost:5555",
-		Duration:  30 * time.Second,
-		Interval:  1 * time.Second,
-		Keys:      5,
+		GTSDBAddr:   "localhost:5555",
+		Duration:    30 * time.Second,
+		Interval:    1 * time.Second,
+		Keys:        50,  // 10× more keys for wider load
+		Concurrency: 8,   // 8 parallel pipelined connections
+		Pipeline:    100, // 100 writes per pipeline burst
+		BatchSize:   0,   // use single writes in pipeline
 	}
 	if len(os.Args) > 1 {
 		cfg.GTSDBAddr = os.Args[1]
